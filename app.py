@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # app.py
 """
-YouTube Downloader Webapp with progress bar (Flask + yt-dlp)
+YouTube Downloader Webapp with progress bar + cookie support
 - Modes: video+audio, audio only, video only
 - Progress tracked via polling
+- Auto-loads cookies.txt if present (fixes 429 / login issues)
 """
 
 import os
@@ -18,7 +19,6 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Global dict for tracking tasks
 tasks = {}
 lock = threading.Lock()
 
@@ -102,23 +102,29 @@ def run_download(task_id, url, mode):
                 tasks[task_id]['percent'] = 100
                 tasks[task_id]['status'] = 'processing'
 
+    # Base yt-dlp options
     ydl_opts = {
         'outtmpl': outtmpl,
         'progress_hooks': [progress_hook],
         'quiet': True,
     }
 
-    if mode=='video':
+    # If cookies.txt exists, add it
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = "cookies.txt"
+
+    # Mode-specific options
+    if mode == 'video':
         ydl_opts['format'] = 'bestvideo+bestaudio/best'
         ydl_opts['merge_output_format'] = 'mp4'
-    elif mode=='audio':
+    elif mode == 'audio':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
-    elif mode=='video_only':
+    elif mode == 'video_only':
         ydl_opts['format'] = 'bestvideo[ext=mp4]/bestvideo'
     else:
         tasks[task_id]['status'] = 'error'
@@ -130,12 +136,12 @@ def run_download(task_id, url, mode):
             info = ydl.extract_info(url, download=True)
         files = [os.path.join(tmpdir,f) for f in os.listdir(tmpdir)]
         filepath = max(files, key=os.path.getsize)
-        tasks[task_id]['status']='done'
-        tasks[task_id]['file']=filepath
-        tasks[task_id]['title']=sanitize_filename(info.get('title','yt'))
+        tasks[task_id]['status'] = 'done'
+        tasks[task_id]['file'] = filepath
+        tasks[task_id]['title'] = sanitize_filename(info.get('title','yt'))
     except Exception as e:
-        tasks[task_id]['status']='error'
-        tasks[task_id]['error']=str(e)
+        tasks[task_id]['status'] = 'error'
+        tasks[task_id]['error'] = str(e)
 
 @app.route("/")
 def index():
@@ -147,7 +153,7 @@ def start():
     mode = request.form.get("mode","video")
     task_id = str(uuid.uuid4())
     with lock:
-        tasks[task_id]={'status':'starting','percent':0}
+        tasks[task_id] = {'status':'starting','percent':0}
     threading.Thread(target=run_download,args=(task_id,url,mode),daemon=True).start()
     return jsonify({'id':task_id})
 
