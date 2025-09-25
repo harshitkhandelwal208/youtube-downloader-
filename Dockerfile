@@ -1,15 +1,21 @@
 FROM python:3.11-slim
 
-# Install ffmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy everything (including cookies.txt if present)
-COPY . /app/
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install deps
-RUN pip install --no-cache-dir flask yt-dlp gunicorn
+COPY . .
 
-# Run app
-CMD ["gunicorn", "-b", "0.0.0.0:10000", "app:app", "--workers=2"]
+RUN pip install --no-cache-dir \
+    Flask==2.3.3 \
+    yt-dlp==2024.03.10 \
+    gunicorn==21.2.0
+
+EXPOSE 10000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app"]
